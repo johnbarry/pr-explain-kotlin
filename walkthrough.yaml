@@ -1,0 +1,254 @@
+walkthrough:
+  title: Migrating the order pipeline from polling to event-driven
+  problem: |
+    The order pipeline polls a database table every 250ms looking for new
+    rows. As volume has grown the polling has become both **wasteful** at
+    low traffic and **lagging** at peaks — we burn database load looking for
+    nothing most of the day, then fall behind during flash sales.
+
+    We want a single change that addresses both ends of that curve.
+  outcome: |
+    The reader understands how the change replaces the polling loop with a
+    long-lived consumer that wakes only when there is real work to do. They
+    can identify which seams were refactored, what was deleted, and what
+    the new lifecycle looks like — enough to review the PR confidently.
+  audience_hint: Engineers familiar with the order pipeline; assumes Kotlin and basic Kafka mental model.
+
+  concepts:
+    - id: event-source-abstraction
+      name: Introduce an EventSource seam
+      premise: |
+        We can't swap a polling loop for a Kafka consumer in one go without
+        either rewriting every caller or leaving two parallel paths. The
+        first move is to extract an **EventSource** interface that hides the
+        producer mechanism behind a uniform `subscribe` operation. Polling
+        and streaming both implement it; the rest of the pipeline becomes
+        ignorant of which one is wired in.
+      diagram:
+        kind: structural
+        after: |
+          classDiagram
+            class EventSource {
+              +subscribe(handler) Subscription
+            }
+            class PollingSource
+            class KafkaSource
+            class OrderPipeline
+            EventSource <|.. PollingSource
+            EventSource <|.. KafkaSource
+            OrderPipeline --> EventSource
+        caption: The pipeline now depends on the interface, not on either implementation.
+      structural_changes:
+        - kind: added
+          subject: EventSource
+          after: |
+            interface EventSource {
+              fun subscribe(handler: (Order) -> Unit): Subscription
+            }
+          caption: New seam — the only handle the pipeline holds on its data source.
+        - kind: signature_changed
+          subject: OrderPipeline.start
+          before: |
+            fun start(db: Database) { /* poll loop */ }
+          after: |
+            fun start(source: EventSource) { /* subscribe */ }
+          caption: Constructor wiring; callers are updated in the same commit.
+      key_excerpts:
+        - file: src/main/kotlin/pipeline/OrderPipeline.kt
+          line_hint: 18
+          excerpt: |
+            fun start(source: EventSource) {
+              subscription = source.subscribe { order ->   // ←
+                process(order)
+              }
+            }
+          caption: |
+            Single line worth attention: the pipeline no longer owns the
+            wakeup cadence.
+
+    - id: consumer-lifecycle
+      name: Replace the worker loop with a session
+      premise: |
+        The old polling thread had two states — "loop running" and "stopped".
+        A Kafka consumer needs to model **assignment, rebalance, and graceful
+        close** explicitly. We rename `WorkerLoop` to `ConsumerSession` to
+        signal that the new lifecycle is the load-bearing concept.
+      diagram:
+        kind: state
+        after: |
+          stateDiagram-v2
+            [*] --> Initializing
+            Initializing --> Subscribed : assign
+            Subscribed --> Draining : shutdown
+            Subscribed --> Rebalancing : partitions_changed
+            Rebalancing --> Subscribed : reassign
+            Draining --> [*] : commit_and_close
+        caption: Four states; the only terminal transition runs a final commit.
+      structural_changes:
+        - kind: renamed
+          subject: WorkerLoop → ConsumerSession
+          caption: |
+            The name now says what the object models. No behaviour change
+            in this commit; behaviour shifts in the next concept.
+      key_excerpts:
+        - file: src/main/kotlin/runtime/ConsumerSession.kt
+          line_hint: 47
+          excerpt: |
+            override fun close() {
+              draining = true
+              pending.awaitDrain()
+              consumer.commitSync()       // ←
+              consumer.close()
+            }
+          caption: "Graceful close: drain in-flight, then commit, then close."
+
+    - id: backpressure
+      name: Bound concurrency with a permit
+      premise: |
+        Under the old polling model concurrency was implicit — the loop ran
+        as fast as the database returned. With a push source the pipeline
+        can be **overrun** by a burst. We add a bounded semaphore around
+        `process` so consumption applies its own backpressure.
+      diagram:
+        kind: comparison
+        before: |
+          flowchart LR
+            Q[(orders table)] --> P[PollingThread]
+            P --> H[handler]
+            H --> DB[(write)]
+        after: |
+          flowchart LR
+            K[(orders topic)] --> C[ConsumerSession]
+            C -->|acquire| S{permit}
+            S -->|granted| H[handler]
+            H --> DB[(write)]
+            H -->|release| S
+        caption: A single permit pool fronts the handler. The old polling thread is gone.
+      structural_changes:
+        - kind: removed
+          subject: PollingThread
+          before: |
+            class PollingThread(private val db: Database) : Thread() {
+              override fun run() {
+                while (!stopped) {
+                  pollOnce(db)
+                  Thread.sleep(POLL_INTERVAL_MS)
+                }
+              }
+            }
+          caption: |
+            Two responsibilities are deleted with the class — wakeup cadence
+            and read-vs-empty distinction. The consumer assumes both.
+      key_excerpts:
+        - file: src/main/kotlin/pipeline/Backpressure.kt
+          line_hint: 12
+          excerpt: |
+            val permits = Semaphore(MAX_INFLIGHT)
+            source.subscribe { order ->
+              permits.acquire()               // ←
+              scope.launch {
+                try { process(order) }
+                finally { permits.release() }
+              }
+            }
+          caption: |
+            The acquire on the consumer thread is the load-bearing line —
+            it is what makes the pipeline push back on the broker.
+
+    - id: observability
+      name: Spans on the consumer, not the handler
+      premise: |
+        Tracing used to start inside `process(order)` because that was the
+        only "real work". With the new structure, **the span belongs to the
+        session** — it should cover assignment latency, permit waits, and
+        the handler. The change moves the responsibility for opening the
+        span up one level.
+      diagram:
+        kind: behavioural
+        after: |
+          sequenceDiagram
+            participant K as Kafka
+            participant C as ConsumerSession
+            participant H as handler
+            K->>C: record
+            C->>C: span.start("consume")
+            C->>H: invoke
+            H-->>C: ok
+            C->>C: span.end
+            C->>K: commit
+        caption: Span boundaries match session boundaries. The handler is span-unaware.
+      structural_changes:
+        - kind: responsibility_moved
+          subject: span lifecycle
+          caption: |
+            Moved from `process()` up to `ConsumerSession.poll()`. Handlers
+            stay testable without a tracer in scope.
+      key_excerpts:
+        - file: src/main/kotlin/runtime/ConsumerSession.kt
+          line_hint: 31
+          excerpt: |
+            tracer.spanBuilder("consume").startActive().use { span ->
+              span.setAttribute("partition", record.partition().toLong())
+              handler(record.toOrder())                                     // ←
+              consumer.commitSync(/* offsets */)
+            }
+          caption: |
+            One enclosing span per record covers acquire, handler, and
+            commit. Nothing inside the handler touches the tracer.
+
+    - id: wrap-up
+      name: What you should be able to answer
+      premise: |
+        Before moving on, you should be able to point at the seam that
+        keeps the new wiring testable, name the responsibility that moved
+        up a level, and explain why the bounded semaphore lives on the
+        consumer side rather than inside the handler.
+      diagram:
+        kind: none
+        caption: |
+          A walkthrough is read once and skimmed many times. The next page
+          gives you prompts to push on the design — answer them before
+          looking at the rationale.
+
+  scrutinize:
+    - prompt: |
+        The EventSource interface returns a Subscription. Why not return a
+        cold Flow instead — what does the imperative subscribe-with-handler
+        give us that a Flow would lose?
+      rationale: |
+        A `Flow` would push the lifecycle responsibility into every consumer
+        site, which is exactly what we're trying to centralize in
+        `ConsumerSession`. We want one place that knows about *commit on
+        close*; a returned subscription handle keeps that single owner.
+
+    - prompt: |
+        Backpressure is implemented with a semaphore. Why not just use a
+        bounded Channel between the consumer and the handler?
+      rationale: |
+        A channel would buffer in-flight work; under pressure the buffer
+        fills and consumer reads keep happening — only the channel send
+        blocks. The semaphore blocks the consumer thread, which transitively
+        pauses Kafka polls and surfaces as broker-side lag (the metric we
+        actually want to see).
+
+    - prompt: |
+        Tracing moved up to the session. Doesn't that hide the handler's
+        internal timing from the trace?
+      rationale: |
+        Handlers add their own child spans where useful. The session span
+        is the **outer envelope** — moving it up makes it possible to see
+        permit-wait time as part of "consume", which was invisible when the
+        span started inside `process`.
+
+  open_questions:
+    - Should `EventSource.subscribe` be `suspend`, so we can drop the inner `launch`?
+    - We commit synchronously on close — is that acceptable under our 30s shutdown SLA, or do we need async commit with a deadline?
+    - The `wrap-up` page is currently a `none`-kind diagram; consider whether a recap diagram would help reviewers vs. distract them.
+
+  appendix:
+    - path: docs/adr/0014-event-source-seam.md
+      description: ADR that records why we chose an interface rather than a sealed class hierarchy.
+    - path: docs/runbooks/consumer-rebalance.md
+      description: Operational guide for diagnosing rebalance storms after deploy.
+    - path: src/test/kotlin/runtime/ConsumerSessionTest.kt
+      description: The lifecycle tests that exercise every state transition in the diagram above.

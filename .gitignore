@@ -1,0 +1,11 @@
+.gradle/
+.kotlin/
+build/
+out/
+.idea/
+.vscode/
+*.iml
+
+# Generated output (rebuilt via `gradle run --args="render ..."`)
+*.html
+!docs/*.html

@@ -1,0 +1,44 @@
+walkthrough:
+  title: ""                                  # empty: error
+  problem: It's broken.
+  outcome: That's the test.
+
+  concepts:
+    - id: comparison-missing-after
+      name: Comparison concept missing the after panel
+      premise: A comparison kind without both panels.
+      diagram:
+        kind: comparison
+        before: |
+          flowchart LR
+            A --> B
+        # after omitted: error
+        caption: should fail validation
+
+    - id: too-many-excerpts
+      name: Hits the keyExcerpts hard cap
+      premise: Has four excerpts; cap is three.
+      diagram:
+        kind: structural
+        after: |
+          flowchart LR
+            A --> B
+        caption: ok
+      key_excerpts:
+        - { file: a.kt, excerpt: "x", caption: "c" }
+        - { file: b.kt, excerpt: "x", caption: "c" }
+        - { file: c.kt, excerpt: "x", caption: "c" }
+        - { file: d.kt, excerpt: "x", caption: "c" }     # over the cap: error
+      structural_changes:
+        - kind: added
+          subject: WithBeforeForbidden
+          before: |
+            // forbidden on added: error
+          after: |
+            class New { }
+          caption: c
+        - kind: renamed
+          subject: Old → New
+          after: |
+            // present on renamed: warn
+          caption: c

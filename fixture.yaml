@@ -1,0 +1,73 @@
+walkthrough:
+  title: Sample walkthrough for the parser smoke test
+  problem: |
+    The parser needs a fixture exercising the full schema — every field, every
+    enum, every optional list — so step 1 can verify kaml is wired correctly.
+  outcome: |
+    Running `walkthrough validate fixture.yaml` parses this document and prints
+    "OK", proving the snake_case naming strategy and unknown-key tolerance work.
+  audience_hint: Internal — used as a parser smoke test only.
+
+  concepts:
+    - id: example-comparison
+      name: Example comparison concept
+      premise: Demonstrates a comparison diagram with both before and after Mermaid sources.
+      diagram:
+        kind: comparison
+        before: |
+          flowchart LR
+            A[Old shape] --> B
+        after: |
+          flowchart LR
+            A[New shape] --> B
+            A --> C
+        caption: Notice the new edge from A to C.
+      structural_changes:
+        - kind: added
+          subject: NewType
+          after: |
+            class NewType { /* ... */ }
+          caption: Added to model the new path.
+        - kind: signature_changed
+          subject: existingMethod
+          before: |
+            fun existingMethod(): Int
+          after: |
+            fun existingMethod(scale: Double): Int
+          caption: Now takes a scale factor.
+      key_excerpts:
+        - file: src/example/Example.kt
+          line_hint: 42
+          excerpt: |
+            fun example() {
+              val x = compute()   // ←
+            }
+          caption: The marked line is what changed.
+
+    - id: example-behavioural
+      name: Example behavioural concept
+      premise: Demonstrates a sequence diagram and a responsibility_moved change.
+      diagram:
+        kind: behavioural
+        after: |
+          sequenceDiagram
+            A->>B: request
+            B-->>A: response
+        caption: A simple round trip.
+      structural_changes:
+        - kind: responsibility_moved
+          subject: error inspection
+          caption: Moved from close() to sendMessage().
+
+  scrutinize:
+    - prompt: Confirm the fixture covers every enum value before we ship.
+      rationale: |
+        validate must exercise both the diagram and structural-change kinds it
+        knows about, otherwise step-2 validation rules go untested.
+
+  open_questions:
+    - Should the fixture also contain an appendix entry?
+
+  appendix:
+    - path: README.md
+      description: How to run the fixture.
