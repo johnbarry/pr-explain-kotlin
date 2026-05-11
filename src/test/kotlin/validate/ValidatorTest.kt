@@ -89,7 +89,7 @@ class ValidatorTest {
     // ----- diagram contracts -----
 
     @Test
-    fun `comparison diagram requires both before and after`() {
+    fun `comparison diagram missing both panels is a warning, not an error`() {
         val r = validate(
             minimalValid(
                 listOf(
@@ -104,12 +104,13 @@ class ValidatorTest {
                 ),
             ),
         )
-        assertContainsError(r, "concepts[0].diagram.before", "kind=comparison")
-        assertContainsError(r, "concepts[0].diagram.after", "kind=comparison")
+        assertFalse(r.hasErrors)
+        assertContainsWarning(r, "concepts[0].diagram.before", "kind=comparison")
+        assertContainsWarning(r, "concepts[0].diagram.after", "kind=comparison")
     }
 
     @Test
-    fun `non-comparison diagram missing after is an error`() {
+    fun `non-comparison diagram missing after is a warning, not an error`() {
         val r = validate(
             minimalValid(
                 listOf(
@@ -123,7 +124,8 @@ class ValidatorTest {
                 ),
             ),
         )
-        assertContainsError(r, "concepts[0].diagram.after", "requires after")
+        assertFalse(r.hasErrors)
+        assertContainsWarning(r, "concepts[0].diagram.after", "should have after")
     }
 
     @Test
@@ -189,7 +191,7 @@ class ValidatorTest {
     // ----- structural change contracts -----
 
     @Test
-    fun `added with before is an error`() {
+    fun `added with before is a warning, not an error`() {
         val r = validate(
             minimalValid(
                 listOf(
@@ -207,11 +209,12 @@ class ValidatorTest {
                 ),
             ),
         )
-        assertContainsError(r, "concepts[0].structuralChanges[0].before", "must not provide before")
+        assertFalse(r.hasErrors)
+        assertContainsWarning(r, "concepts[0].structuralChanges[0].before", "usually omits before")
     }
 
     @Test
-    fun `removed missing before is an error`() {
+    fun `removed missing before is a warning, not an error`() {
         val r = validate(
             minimalValid(
                 listOf(
@@ -229,11 +232,12 @@ class ValidatorTest {
                 ),
             ),
         )
-        assertContainsError(r, "concepts[0].structuralChanges[0].before", "requires before")
+        assertFalse(r.hasErrors)
+        assertContainsWarning(r, "concepts[0].structuralChanges[0].before", "should have before")
     }
 
     @Test
-    fun `signature_changed requires both before and after`() {
+    fun `signature_changed missing both panels is a warning, not an error`() {
         val r = validate(
             minimalValid(
                 listOf(
@@ -251,12 +255,13 @@ class ValidatorTest {
                 ),
             ),
         )
-        assertContainsError(r, "concepts[0].structuralChanges[0].before", "requires before")
-        assertContainsError(r, "concepts[0].structuralChanges[0].after", "requires after")
+        assertFalse(r.hasErrors)
+        assertContainsWarning(r, "concepts[0].structuralChanges[0].before", "kind=signature_changed")
+        assertContainsWarning(r, "concepts[0].structuralChanges[0].after", "kind=signature_changed")
     }
 
     @Test
-    fun `responsibility_moved with code blocks is an error`() {
+    fun `responsibility_moved with code blocks is a warning, not an error`() {
         val r = validate(
             minimalValid(
                 listOf(
@@ -274,8 +279,9 @@ class ValidatorTest {
                 ),
             ),
         )
-        assertContainsError(r, "concepts[0].structuralChanges[0].before", "must not provide before")
-        assertContainsError(r, "concepts[0].structuralChanges[0].after", "must not provide after")
+        assertFalse(r.hasErrors)
+        assertContainsWarning(r, "concepts[0].structuralChanges[0].before", "usually omits before")
+        assertContainsWarning(r, "concepts[0].structuralChanges[0].after", "usually omits after")
     }
 
     @Test

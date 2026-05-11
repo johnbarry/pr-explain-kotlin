@@ -28,28 +28,49 @@ import model.DiagramKind
  * contract — we won't render an invalid walkthrough.
  */
 fun FlowContent.diagramBlock(d: Diagram) {
+    val hasBefore = !d.before.isNullOrBlank()
+    val hasAfter = !d.after.isNullOrBlank()
+
     when (d.kind) {
         DiagramKind.comparison -> {
-            figure(classes = "diagram diagram--comparison") {
-                div(classes = "comparison-panels") {
-                    div(classes = "comparison-panel") {
-                        span(classes = "panel-label") { +"Before" }
-                        div(classes = "mermaid") { +(d.before ?: "") }
-                    }
-                    div(classes = "comparison-panel") {
-                        span(classes = "panel-label") { +"After" }
-                        div(classes = "mermaid") { +(d.after ?: "") }
+            // Render whichever panel(s) the author actually provided. With
+            // both, the usual side-by-side. With one, a single panel still
+            // tagged as a comparison-figure. With neither, fall through to
+            // caption-only (same shape as kind=none).
+            if (!hasBefore && !hasAfter) {
+                figure(classes = "diagram diagram--comparison diagram--empty") {
+                    p(classes = "diagram-none-caption prose") {
+                        unsafe { +Markdown.toHtml(d.caption) }
                     }
                 }
-                figcaption(classes = "diagram-caption prose") {
-                    unsafe { +Markdown.toHtml(d.caption) }
+            } else {
+                figure(classes = "diagram diagram--comparison") {
+                    div(classes = "comparison-panels") {
+                        if (hasBefore) {
+                            div(classes = "comparison-panel") {
+                                span(classes = "panel-label") { +"Before" }
+                                div(classes = "mermaid") { +(d.before ?: "") }
+                            }
+                        }
+                        if (hasAfter) {
+                            div(classes = "comparison-panel") {
+                                span(classes = "panel-label") { +"After" }
+                                div(classes = "mermaid") { +(d.after ?: "") }
+                            }
+                        }
+                    }
+                    figcaption(classes = "diagram-caption prose") {
+                        unsafe { +Markdown.toHtml(d.caption) }
+                    }
                 }
             }
         }
 
         DiagramKind.structural, DiagramKind.behavioural, DiagramKind.state -> {
             figure(classes = "diagram diagram--${d.kind}") {
-                div(classes = "mermaid") { +(d.after ?: "") }
+                if (hasAfter) {
+                    div(classes = "mermaid") { +(d.after ?: "") }
+                }
                 figcaption(classes = "diagram-caption prose") {
                     unsafe { +Markdown.toHtml(d.caption) }
                 }

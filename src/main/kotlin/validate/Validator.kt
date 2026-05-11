@@ -105,15 +105,19 @@ private fun validateConcept(issues: MutableList<ValidationIssue>, path: String, 
 private fun validateDiagram(issues: MutableList<ValidationIssue>, path: String, d: Diagram) {
     requireNonEmpty(issues, "$path.caption", d.caption)
 
+    // Kind-vs-panel mismatches are advisory: the renderer degrades gracefully
+    // (renders whichever panel exists, or just the caption). Authors get a
+    // warning so they know they probably meant a different `kind`, but the
+    // walkthrough still renders.
     when (d.kind) {
         DiagramKind.comparison -> {
             if (d.before.isNullOrBlank()) {
-                issues.error("$path.before", "kind=comparison requires before to be non-empty")
+                issues.warn("$path.before", "kind=comparison should have before; renderer will degrade to a single panel")
             } else {
                 checkMermaid(issues, "$path.before", d.before)
             }
             if (d.after.isNullOrBlank()) {
-                issues.error("$path.after", "kind=comparison requires after to be non-empty")
+                issues.warn("$path.after", "kind=comparison should have after; renderer will degrade to a single panel")
             } else {
                 checkMermaid(issues, "$path.after", d.after)
             }
@@ -130,7 +134,7 @@ private fun validateDiagram(issues: MutableList<ValidationIssue>, path: String, 
         DiagramKind.behavioural,
         DiagramKind.state -> {
             if (d.after.isNullOrBlank()) {
-                issues.error("$path.after", "kind=${d.kind} requires after to be non-empty")
+                issues.warn("$path.after", "kind=${d.kind} should have after; renderer will show caption only")
             } else {
                 checkMermaid(issues, "$path.after", d.after)
             }
@@ -152,42 +156,46 @@ private fun validateStructuralChange(
     requireNonEmpty(issues, "$path.subject", c.subject)
     requireNonEmpty(issues, "$path.caption", c.caption)
 
+    // Like diagrams: kind-vs-panel mismatches are warnings, not errors. The
+    // renderer ignores fields that don't fit the change kind and shows
+    // whatever the author provided (so a mis-tagged `kind: added` with both
+    // panels still renders something useful).
     when (c.kind) {
         ChangeKind.added -> {
             if (c.after.isNullOrBlank()) {
-                issues.error("$path.after", "kind=added requires after")
+                issues.warn("$path.after", "kind=added should have after; renderer will show caption only")
             }
             if (!c.before.isNullOrBlank()) {
-                issues.error("$path.before", "kind=added must not provide before")
+                issues.warn("$path.before", "kind=added usually omits before; renderer will ignore it")
             }
         }
         ChangeKind.removed -> {
             if (c.before.isNullOrBlank()) {
-                issues.error("$path.before", "kind=removed requires before")
+                issues.warn("$path.before", "kind=removed should have before; renderer will show caption only")
             }
             if (!c.after.isNullOrBlank()) {
-                issues.error("$path.after", "kind=removed must not provide after")
+                issues.warn("$path.after", "kind=removed usually omits after; renderer will ignore it")
             }
         }
         ChangeKind.signature_changed -> {
             if (c.before.isNullOrBlank()) {
-                issues.error("$path.before", "kind=signature_changed requires before")
+                issues.warn("$path.before", "kind=signature_changed usually has before; renderer will render only the side(s) provided")
             }
             if (c.after.isNullOrBlank()) {
-                issues.error("$path.after", "kind=signature_changed requires after")
+                issues.warn("$path.after", "kind=signature_changed usually has after; renderer will render only the side(s) provided")
             }
         }
         ChangeKind.responsibility_moved -> {
             if (!c.before.isNullOrBlank()) {
-                issues.error(
+                issues.warn(
                     "$path.before",
-                    "kind=responsibility_moved must not provide before; the caption carries the meaning",
+                    "kind=responsibility_moved usually omits before; renderer will ignore it",
                 )
             }
             if (!c.after.isNullOrBlank()) {
-                issues.error(
+                issues.warn(
                     "$path.after",
-                    "kind=responsibility_moved must not provide after; the caption carries the meaning",
+                    "kind=responsibility_moved usually omits after; renderer will ignore it",
                 )
             }
         }
