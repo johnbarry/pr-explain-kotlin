@@ -27,7 +27,7 @@ data class Concept(
     val premise: String,
     val diagram: Diagram,
     val structuralChanges: List<StructuralChange> = emptyList(),
-    /** Hard cap of 3 enforced by validation (step 2). */
+    /** Spec recommends at most 3; validation warns above that but does not error. */
     val keyExcerpts: List<Excerpt> = emptyList(),
 )
 

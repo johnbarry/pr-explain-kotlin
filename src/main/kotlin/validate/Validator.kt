@@ -51,15 +51,15 @@ fun validate(w: Walkthrough): ValidationResult {
         requireNonEmpty(issues, "audienceHint", w.audienceHint)
     }
 
-    when (w.concepts.size) {
-        in 2..5 -> Unit
-        in 1..7 -> issues.warn(
+    when {
+        w.concepts.isEmpty() -> issues.error(
+            "concepts",
+            "concepts must have at least one entry",
+        )
+        w.concepts.size in 2..5 -> Unit
+        else -> issues.warn(
             "concepts",
             "concepts.size = ${w.concepts.size}; spec recommends 2..5",
-        )
-        else -> issues.error(
-            "concepts",
-            "concepts.size = ${w.concepts.size}; must be in 1..7",
         )
     }
 
@@ -87,10 +87,10 @@ private fun validateConcept(issues: MutableList<ValidationIssue>, path: String, 
 
     validateDiagram(issues, "$path.diagram", c.diagram)
 
-    if (c.keyExcerpts.size > MAX_KEY_EXCERPTS) {
-        issues.error(
+    if (c.keyExcerpts.size > RECOMMENDED_KEY_EXCERPTS) {
+        issues.warn(
             "$path.keyExcerpts",
-            "keyExcerpts.size = ${c.keyExcerpts.size}; hard cap is $MAX_KEY_EXCERPTS",
+            "keyExcerpts.size = ${c.keyExcerpts.size}; spec recommends at most $RECOMMENDED_KEY_EXCERPTS",
         )
     }
 
@@ -247,4 +247,4 @@ private fun MutableList<ValidationIssue>.warn(path: String, message: String) {
     add(ValidationIssue(Severity.WARNING, path, message))
 }
 
-private const val MAX_KEY_EXCERPTS = 3
+private const val RECOMMENDED_KEY_EXCERPTS = 3

@@ -101,7 +101,7 @@ walkthrough:
     after reading>
   audience_hint: <optional one-liner about prerequisites>
 
-  concepts:           # 2..5 items; 1 or 6–7 allowed with a warning
+  concepts:           # 2..5 recommended; anything outside that range is a warning, not an error
     - id: <kebab-case>
       name: <short noun phrase>
       premise: |

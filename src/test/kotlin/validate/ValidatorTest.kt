@@ -68,15 +68,15 @@ class ValidatorTest {
     @Test
     fun `concepts size 1 is allowed but warned (outside ideal 2-5)`() {
         val r = validate(minimalValid(listOf(simpleConcept())))
-        // size=1 is in 1..7 → warn (not error)
         assertFalse(r.hasErrors)
         assertContainsWarning(r, "concepts", "recommends 2..5")
     }
 
     @Test
-    fun `concepts size 8 is an error`() {
-        val r = validate(minimalValid((1..8).map { simpleConcept("c$it", "n$it") }))
-        assertContainsError(r, "concepts", "must be in 1..7")
+    fun `concepts size above 5 is a warning, not an error`() {
+        val r = validate(minimalValid((1..12).map { simpleConcept("c$it", "n$it") }))
+        assertFalse(r.hasErrors)
+        assertContainsWarning(r, "concepts", "recommends 2..5")
     }
 
     @Test
@@ -304,7 +304,7 @@ class ValidatorTest {
     // ----- excerpt cap -----
 
     @Test
-    fun `keyExcerpts size greater than 3 is a hard error`() {
+    fun `keyExcerpts size greater than 3 is a warning, not an error`() {
         val r = validate(
             minimalValid(
                 listOf(
@@ -316,7 +316,8 @@ class ValidatorTest {
                 ),
             ),
         )
-        assertContainsError(r, "concepts[0].keyExcerpts", "hard cap is 3")
+        assertFalse(r.hasErrors)
+        assertContainsWarning(r, "concepts[0].keyExcerpts", "recommends at most 3")
     }
 
     @Test
